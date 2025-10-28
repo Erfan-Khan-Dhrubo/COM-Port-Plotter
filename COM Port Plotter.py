@@ -119,7 +119,7 @@ class SerialReader(threading.Thread): # SerialReader is a child of threading.Thr
 class SerialPlotterApp:
     def __init__(self, root): # __init__ is called automatically when you create an object of this class.
         self.root = root # root is the main Tkinter window passed from outside.
-        self.root.title("Arduino 2-Channel Plotter") # self.root.title() sets the window title.
+        self.root.title("COM Port Plotter") # self.root.title() sets the window title.
 
         self.data_queue = queue.Queue() # thread-safe queue to exchange data between the background thread
         self.stop_event = threading.Event() # used to signal the background thread to stop gracefully.
@@ -127,6 +127,7 @@ class SerialPlotterApp:
         # later it will start and stop a thread that continuously reads data from your Arduino.
 
         # Keep all data (no limit)
+        self.max_points = 10
         self.xdata = [] # self.xdata: Stores the x-axis values for the plot (usually sample index or time).
         self.y1 = [] # self.y1: Stores the values for Channel 1 from Arduino.
         self.y2 = [] # self.y2: Stores the values for Channel 2 from Arduino.
@@ -297,17 +298,35 @@ class SerialPlotterApp:
         self.root.after(self.update_interval_ms, self.periodic_update)
 
     def append_sample(self, ts, v1, v2):
-        self.xdata.append(len(self.xdata))
+        # Use a running counter for x-axis (like a timestamp index)
+        if not self.xdata:
+            new_x = 0
+        else:
+            new_x = self.xdata[-1] + 1
+
+        self.xdata.append(new_x)
         self.y1.append(v1)
         self.y2.append(v2)
+
+        # Keep only the last max_points
+        if len(self.xdata) > self.max_points:
+            self.xdata = self.xdata[-self.max_points:]
+            self.y1 = self.y1[-self.max_points:]
+            self.y2 = self.y2[-self.max_points:]
 
     def redraw_plots(self):
         # .set_data(x, y) updates the data that will be drawn on the plot.
         self.line1.set_data(self.xdata, self.y1)
         self.line2.set_data(self.xdata, self.y2)
         if self.xdata:
-            self.ax1.set_xlim(0, len(self.xdata))
-            self.ax2.set_xlim(0, len(self.xdata))
+            if len(self.xdata) == 1:
+                # Only one point, give a small range
+                self.ax1.set_xlim(self.xdata[0] - 0.5, self.xdata[0] + 0.5)
+                self.ax2.set_xlim(self.xdata[0] - 0.5, self.xdata[0] + 0.5)
+            else:
+                self.ax1.set_xlim(self.xdata[0], self.xdata[-1])
+                self.ax2.set_xlim(self.xdata[0], self.xdata[-1])
+
         if self.y1:
             self.ax1.set_ylim(min(self.y1) - 1, max(self.y1) + 1)
         if self.y2:
