@@ -1,19 +1,18 @@
-
 import tkinter as tk
-from tkinter import ttk, messagebox
 # ttk: Stands for Themed Tkinter Widgets. It provides modern-looking widgets like buttons, labels etc.
 # messagebox: Module to show popups like alerts, errors, warnings, or info boxes.
+from tkinter import ttk, messagebox
 
-import threading # Used to run tasks in parallel.
-import queue
-import time
-import re
+import threading  # Enables running background tasks (like serial data reading) without freezing the GUI.
+import queue      # Provides a thread-safe way to share data between threads.
+import time       # Used to add timestamps and handle timing operations.
+import re         # Used to extract numeric values from serial data using regular expressions.
 
-# Import matplotlib for embedding
-import matplotlib
-matplotlib.use("TkAgg")
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib                                                # Main plotting library for creating graphs.
+matplotlib.use("TkAgg")                                          # Sets the backend so Matplotlib can display plots inside a Tkinter window.
+from matplotlib.figure import Figure                             # Imports the Figure class, which represents the overall plotting area.
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # Allows embedding Matplotlib figures into Tkinter GUI.
+
 
 # pyserial for serial communication
 try:
@@ -38,9 +37,7 @@ def list_serial_ports():
     return [p.device for p in ports]
 
 
-# ------------------------
 # Serial Reader Thread
-# ------------------------
 class SerialReader(threading.Thread): # SerialReader is a child of threading.Thread. So it automatically gets all the functions and behavior of a Python thread — such as .start(), .run(), .join(), etc.
     # Thread that reads lines from a serial port and pushes parsed samples to a queue.
 
@@ -114,48 +111,46 @@ class SerialReader(threading.Thread): # SerialReader is a child of threading.Thr
             return None
 
 
-
 # Main Application GUI
 class SerialPlotterApp:
-    def __init__(self, root): # __init__ is called automatically when you create an object of this class.
-        self.root = root # root is the main Tkinter window passed from outside.
-        self.root.title("COM Port Plotter") # self.root.title() sets the window title.
+    def __init__(self, root):                 # __init__ is called automatically when you create an object of this class.
+        self.root = root                      # root is the main Tkinter window passed from outside.
+        self.root.title("COM Port Plotter")   # self.root.title() sets the window title.
 
-        self.data_queue = queue.Queue() # thread-safe queue to exchange data between the background thread
-        self.stop_event = threading.Event() # used to signal the background thread to stop gracefully.
-        self.reader_thread = None # self.reader_thread = None means there’s currently no serial reading thread running
-        # later it will start and stop a thread that continuously reads data from your Arduino.
+        self.data_queue = queue.Queue()       # thread-safe queue to exchange data between the background thread
+        self.stop_event = threading.Event()   # used to signal the background thread to stop gracefully.
+        self.reader_thread = None             # self.reader_thread = None is created to hold the background thread
+                                              # later it will start and stop a thread that continuously reads data from COM port.
 
-        # Keep all data (no limit)
-        self.max_points = 10
-        self.xdata = [] # self.xdata: Stores the x-axis values for the plot (usually sample index or time).
-        self.y1 = [] # self.y1: Stores the values for Channel 1 from Arduino.
-        self.y2 = [] # self.y2: Stores the values for Channel 2 from Arduino.
+        # Keep all data
+        self.max_data_limit = 10
+        self.xdata = []                       # self.xdata: Stores the x-axis values for the plot
+        self.y1 = []                          # self.y1: Stores the values for Channel 1 from COM port.
+        self.y2 = []                          # self.y2: Stores the values for Channel 2 from COM port.
 
         # No data detection
-        self.no_data_counter = 0 # Counts how many consecutive update cycles have occurred without receiving new data.
-        self.no_data_limit = 10  # 10 cycles * 100ms ~ 1 second
-        # If the counter reaches this limit, the app will show "No data is coming" in the UI.
+        self.no_data_counter = 0              # Counts how many consecutive update cycles have occurred without receiving new data.
+        self.no_data_limit = 10               # If the counter reaches this limit, the app will show "No data is coming" in the UI.
 
         # Status messages
         self.connection_status_var = tk.StringVar(value="Disconnected") # special Tkinter variable that automatically updates any widget (like Label) linked to it.
-        self.data_status_var = tk.StringVar(value="No data") # Shows whether data is currently coming from Arduino. Initially "No data"
+        self.data_status_var = tk.StringVar(value="No data")            # Shows whether data is currently coming from Arduino. Initially "No data"
 
-        self.create_widgets() # Builds the Tkinter GUI controls like COM port dropdown, Connect button, and status labels.
-        self.create_plots() # Sets up the matplotlib figure and axes to show the two channels of data in real-time.
+        self.create_widgets()                 # Builds the Tkinter GUI controls like COM port dropdown, Connect button, and status labels.
+        self.create_plots()                   # Sets up the matplotlib figure and axes to show the two channels of data in real-time.
 
-        self.update_interval_ms = 100  # redraw every 100 ms
-        self.root.after(self.update_interval_ms, self.periodic_update)
+        self.update_interval_ms = 100         # redraw every 100 ms
         # self.root.after(delay_ms, func) is a Tkinter method to schedule a function call after a given delay.
+        self.root.after(self.update_interval_ms, self.periodic_update)
+
 
     def create_widgets(self):
-        frm = ttk.Frame(self.root) # creates a container inside the main window (self.root) to organize widgets horizontally.
-        frm.pack(fill="x", padx=8, pady=8) # stretch the frame horizontally across the window.
+        frm = ttk.Frame(self.root)              # creates a container inside the main window (self.root) to organize widgets horizontally.
+        frm.pack(fill="x", padx=8, pady=8)      # stretch the frame horizontally across the window.
 
-        ttk.Label(frm, text="COM Port:").pack(side="left") # Creates a label "COM Port:" inside the frame in left
-        self.port_cb = ttk.Combobox(frm, values=list_serial_ports(), width=15)
-        # ttk.Combobox is a dropdown menu to select the serial port.
-        # values=list_serial_ports() fills the dropdown with all available COM ports.
+        ttk.Label(frm, text="COM Port:").pack(side="left")                          # Creates a label "COM Port:" inside the frame in left
+        self.port_cb = ttk.Combobox(frm, values=list_serial_ports(), width=15)      # ttk.Combobox is a dropdown menu to select the serial port.
+                                                                                    # values=list_serial_ports() fills the dropdown with all available COM ports.
         self.port_cb.pack(side="left", padx=(4, 10))
 
         self.refresh_btn = ttk.Button(frm, text="Refresh", command=self.refresh_ports)
@@ -174,13 +169,13 @@ class SerialPlotterApp:
         ttk.Label(frm, textvariable=self.data_status_var).pack(side="left", padx=(10, 0))
 
     def create_plots(self):
-        self.fig = Figure(figsize=(8, 5), dpi=100) # Creates a matplotlib figure for plotting
-        # figsize=(8, 5) → 8 inches wide, 5 inches tall. dpi=100 → resolution of 100 dots per inch.
+        self.fig = Figure(figsize=(8, 5), dpi=100)              # Creates a matplotlib figure for plotting
+                                                                # figsize=(8, 5) → 8 inches wide, 5 inches tall. dpi=100 → resolution of 100 dots per inch.
 
         # Creates two subplots inside the figure
-        self.ax1 = self.fig.add_subplot(211) # 211 → 2 rows, 1 column, first subplot (top plot).
-        self.ax2 = self.fig.add_subplot(212, sharex=self.ax1) # 212 → 2 rows, 1 column, second subplot (bottom plot).
-        # sharex=self.ax1 → bottom plot shares the same X-axis as the top plot.
+        self.ax1 = self.fig.add_subplot(211)                    # 211 → 2 rows, 1 column, first subplot (top plot).
+        self.ax2 = self.fig.add_subplot(212, sharex=self.ax1)   # 212 → 2 rows, 1 column, second subplot (bottom plot).
+                                                                # sharex=self.ax1 → bottom plot shares the same X-axis as the top plot.
 
         self.line1, = self.ax1.plot([], [], 'r-', label="Channel 1")
         self.line2, = self.ax2.plot([], [], 'b-', label="Channel 2")
@@ -218,9 +213,9 @@ class SerialPlotterApp:
         # self.reader_thread holds the background serial reader thread (from SerialReader).
         # is_alive() checks if that thread is currently running.
         if self.reader_thread and self.reader_thread.is_alive():
-            self.stop_reader() # safely stops and closes the serial connection)
+            self.stop_reader()                  # safely stops and closes the serial connection)
         else:
-            port = self.port_cb.get() # This fetches the selected COM port name from the dropdown menu
+            port = self.port_cb.get()           # This fetches the selected COM port name from the dropdown menu
             baud = int(self.baud_cb.get())
             if not port:
                 messagebox.showerror("Error", "Select a COM port.")
@@ -261,15 +256,14 @@ class SerialPlotterApp:
         self.data_status_var.set("No data")
 
     # This function runs every 100 ms
-    # self.root.after(self.update_interval_ms, self.periodic_update)
     def periodic_update(self):
-        updated = False # This flag keeps track of whether new data was received from the serial port during this cycle.
+        updated = False             # This flag keeps track of whether new data was received from the serial port during this cycle.
         while True:
             try:
-                item = self.data_queue.get_nowait()
-                # Queue has three items: (t1, 27.3, 30.4), (t2, 25.4, 32.7), (t3, 23.8, 35.3).
+                # Suppose Queue has three items: (t1, 27.3, 30.4), (t2, 25.4, 32.7), (t3, 23.8, 35.3).
                 # while True with get_nowait() will fetch all three in this cycle.
                 # Once empty, it breaks, and the GUI can continue updating.
+                item = self.data_queue.get_nowait()
             except queue.Empty:
                 break
             self.no_data_counter = 0
@@ -309,10 +303,10 @@ class SerialPlotterApp:
         self.y2.append(v2)
 
         # Keep only the last max_points
-        if len(self.xdata) > self.max_points:
-            self.xdata = self.xdata[-self.max_points:]
-            self.y1 = self.y1[-self.max_points:]
-            self.y2 = self.y2[-self.max_points:]
+        if len(self.xdata) > self.max_data_limit:
+            self.xdata = self.xdata[-self.max_data_limit:]
+            self.y1 = self.y1[-self.max_data_limit:]
+            self.y2 = self.y2[-self.max_data_limit:]
 
     def redraw_plots(self):
         # .set_data(x, y) updates the data that will be drawn on the plot.
@@ -331,12 +325,14 @@ class SerialPlotterApp:
             self.ax1.set_ylim(min(self.y1) - 1, max(self.y1) + 1)
         if self.y2:
             self.ax2.set_ylim(min(self.y2) - 1, max(self.y2) + 1)
-        self.canvas.draw_idle()
+
         # draw_idle() tells matplotlib to redraw the plot asynchronously without freezing the GUI.
+        self.canvas.draw_idle()
+
 
     def on_close(self):
-        self.stop_reader() # Calls the stop_reader() method to safely stop the serial reading thread.
-        self.root.destroy() # destroy() terminates the Tkinter mainloop and cleans up all widgets.
+        self.stop_reader()      # Calls the stop_reader() method to safely stop the serial reading thread.
+        self.root.destroy()     # destroy() terminates the Tkinter mainloop and cleans up all widgets.
 
 
 
